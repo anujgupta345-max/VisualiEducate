@@ -1,0 +1,5 @@
+{
+  "name": "VisualPDF - AI Contextual Diagram Generator",
+  "description": "A sophisticated tool that allows users to select text within a PDF and instantly generate accurate, context-aware diagrams or illustrations using Gemini AI to explain complex concepts visually.",
+  "requestFramePermissions": []
+}

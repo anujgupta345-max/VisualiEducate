@@ -1,374 +1,410 @@
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { 
-  FileText, 
-  Upload, 
-  Sparkles, 
-  Image as ImageIcon, 
-  ChevronLeft, 
-  ChevronRight,
-  Loader2,
-  X,
-  History,
-  Maximize2,
-  AlertCircle
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import {
+  AlertTriangle, RefreshCw, Globe, Filter, ChevronDown, ChevronUp,
+  BookOpen, Briefcase, Users, Building2, Calendar, Scale, MessageCircle,
+  CheckCircle2, ExternalLink, Loader2, Wifi, WifiOff, Info, Sparkles
 } from 'lucide-react';
-import { VisualResult, GenerationStatus } from './types';
-import { generateVisualFromContext } from './services/gemini';
+import { DailyBriefing, VisaCategory, VisaNewsItem } from './types';
+import {
+  fetchDailyVisaBriefing, COUNTRY_FLAGS, CATEGORY_META,
+  SOURCE_META, SEVERITY_CONFIG
+} from './services/visaNewsService';
 
-// --- Sub-components (Outside App for cleanliness) ---
+// --- Constants ---
 
-const LoadingOverlay: React.FC<{ message: string }> = ({ message }) => (
-  <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center animate-in fade-in duration-300">
-    <div className="relative">
-      <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-      <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600 w-6 h-6" />
+const ALL_COUNTRIES = ['USA', 'UK', 'Canada', 'Australia', 'Germany', 'France', 'Netherlands', 'Other'];
+
+const CATEGORY_ICONS: Record<string, React.FC<{ size?: number; className?: string }>> = {
+  'student-visa':     (p) => <BookOpen {...p} />,
+  'work-visa':        (p) => <Briefcase {...p} />,
+  'family-visa':      (p) => <Users {...p} />,
+  'embassy-update':   (p) => <Building2 {...p} />,
+  'slot-availability':(p) => <Calendar {...p} />,
+  'policy-change':    (p) => <Scale {...p} />,
+  'community-story':  (p) => <MessageCircle {...p} />,
+  'success-story':    (p) => <CheckCircle2 {...p} />,
+};
+
+const CATEGORIES: { id: string; label: string; emoji: string }[] = [
+  { id: 'all',              label: 'All News',       emoji: '📰' },
+  { id: 'student-visa',     label: 'Students',       emoji: '🎓' },
+  { id: 'work-visa',        label: 'Work Visas',     emoji: '💼' },
+  { id: 'family-visa',      label: 'Family',         emoji: '👨‍👩‍👧' },
+  { id: 'embassy-update',   label: 'Embassy',        emoji: '🏛️' },
+  { id: 'slot-availability',label: 'Slot Status',    emoji: '📅' },
+  { id: 'policy-change',    label: 'Policy',         emoji: '⚖️' },
+  { id: 'community-story',  label: 'Community',      emoji: '💬' },
+  { id: 'success-story',    label: 'Success',        emoji: '✅' },
+];
+
+// --- Sub-components ---
+
+const SeverityBadge: React.FC<{ severity: string }> = ({ severity }) => {
+  const cfg = SEVERITY_CONFIG[severity] ?? SEVERITY_CONFIG.info;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${cfg.badge}`}>
+      {cfg.label}
+    </span>
+  );
+};
+
+const CategoryBadge: React.FC<{ category: VisaCategory }> = ({ category }) => {
+  const meta = CATEGORY_META[category];
+  if (!meta) return null;
+  const Icon = CATEGORY_ICONS[category];
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">
+      {Icon && <Icon size={11} />}
+      {meta.label}
+    </span>
+  );
+};
+
+const SourceBadge: React.FC<{ sourceType: string; source: string }> = ({ sourceType, source }) => {
+  const meta = SOURCE_META[sourceType] ?? SOURCE_META.news;
+  return (
+    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${meta.color}`}>
+      {meta.label}: {source}
+    </span>
+  );
+};
+
+const NewsCard: React.FC<{ item: VisaNewsItem }> = ({ item }) => {
+  const [expanded, setExpanded] = useState(false);
+  const cfg = SEVERITY_CONFIG[item.severity] ?? SEVERITY_CONFIG.info;
+  const flag = COUNTRY_FLAGS[item.country] ?? '🌍';
+
+  return (
+    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden border-l-4 ${cfg.border} transition-shadow hover:shadow-md`}>
+      <div className="p-4 space-y-3">
+        {/* Top meta row */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex flex-wrap gap-1.5">
+            <SeverityBadge severity={item.severity} />
+            <CategoryBadge category={item.category} />
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-600">
+              {flag} {item.country}
+            </span>
+          </div>
+        </div>
+
+        {/* Title */}
+        <h3 className="text-sm font-bold text-slate-800 leading-snug">{item.title}</h3>
+
+        {/* Summary */}
+        <p className="text-xs text-slate-600 leading-relaxed">{item.summary}</p>
+
+        {/* Affected group */}
+        {item.affectedGroup && (
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+            <Users size={11} />
+            <span className="italic">Affects: {item.affectedGroup}</span>
+          </div>
+        )}
+
+        {/* Action Required (collapsible) */}
+        {item.actionRequired && (
+          <div>
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800 transition-colors"
+            >
+              <Info size={12} />
+              What to do
+              {expanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            </button>
+            {expanded && (
+              <div className="mt-2 p-3 bg-indigo-50 border border-indigo-100 rounded-lg text-[11px] text-indigo-800 leading-relaxed">
+                {item.actionRequired}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tags + source */}
+        <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+          <div className="flex flex-wrap gap-1">
+            {item.tags.slice(0, 4).map(tag => (
+              <span key={tag} className="px-1.5 py-0.5 bg-slate-50 border border-slate-200 rounded text-[10px] text-slate-500">
+                #{tag}
+              </span>
+            ))}
+          </div>
+          <SourceBadge sourceType={item.sourceType} source={item.source} />
+        </div>
+      </div>
     </div>
-    <p className="mt-4 text-slate-600 font-medium animate-pulse">{message}</p>
+  );
+};
+
+const AlertBanner: React.FC<{ alerts: VisaNewsItem[] }> = ({ alerts }) => {
+  const [visible, setVisible] = useState(true);
+  if (!visible || alerts.length === 0) return null;
+
+  return (
+    <div className="bg-red-600 text-white px-4 py-3">
+      <div className="max-w-7xl mx-auto flex items-start gap-3">
+        <AlertTriangle className="shrink-0 mt-0.5" size={18} />
+        <div className="flex-1 min-w-0">
+          <p className="text-xs font-bold uppercase tracking-wide mb-1">
+            {alerts.length} Critical Alert{alerts.length > 1 ? 's' : ''} Today
+          </p>
+          <ul className="space-y-1">
+            {alerts.map(a => (
+              <li key={a.id} className="text-xs opacity-90 leading-snug">
+                <span className="font-semibold">{COUNTRY_FLAGS[a.country] ?? '🌍'} {a.country}:</span>{' '}
+                {a.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+        <button onClick={() => setVisible(false)} className="shrink-0 text-white/70 hover:text-white text-lg leading-none">
+          ×
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const SummaryCard: React.FC<{ briefing: DailyBriefing }> = ({ briefing }) => (
+  <div className="bg-gradient-to-br from-indigo-600 to-violet-700 text-white rounded-xl p-5 shadow-lg">
+    <div className="flex items-center gap-2 mb-3">
+      <Sparkles size={16} className="text-yellow-300" />
+      <span className="text-xs font-bold uppercase tracking-widest text-indigo-200">AI Daily Briefing</span>
+    </div>
+    <h2 className="text-base font-bold leading-snug mb-3">{briefing.headline}</h2>
+    <p className="text-sm text-indigo-100 leading-relaxed">{briefing.executiveSummary}</p>
+    <div className="mt-4 flex items-center gap-4 text-[11px] text-indigo-300">
+      <span>{briefing.news.length} stories aggregated</span>
+      <span>·</span>
+      <span>{briefing.date}</span>
+      <span>·</span>
+      <span className="flex items-center gap-1"><Sparkles size={10} /> Powered by Gemini AI</span>
+    </div>
   </div>
 );
 
-const VisualCard: React.FC<{ result: VisualResult; onClose: () => void }> = ({ result, onClose }) => (
-  <div className="bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-full animate-in slide-in-from-right duration-500">
-    <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
-      <div className="flex items-center gap-2">
-        <div className="bg-indigo-100 p-1.5 rounded-lg text-indigo-600">
-          <ImageIcon size={18} />
-        </div>
-        <h3 className="font-semibold text-slate-800 text-sm">AI Visualization</h3>
-      </div>
-      <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-        <X size={20} />
-      </button>
+const LoadingState: React.FC = () => (
+  <div className="flex flex-col items-center justify-center py-20 gap-4 text-slate-500">
+    <div className="relative">
+      <div className="w-14 h-14 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
+      <Globe className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600 w-5 h-5" />
     </div>
-    
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      <div className="group relative rounded-lg overflow-hidden border border-slate-200 shadow-sm transition-transform hover:scale-[1.01]">
-        <img src={result.imageUrl} alt="AI Generation" className="w-full h-auto object-cover" />
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="bg-white/90 p-1.5 rounded-md shadow-sm hover:bg-white text-slate-700">
-            <Maximize2 size={16} />
-          </button>
-        </div>
-      </div>
-      
-      <div className="space-y-2">
-        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Source Context</h4>
-        <p className="text-sm text-slate-600 italic bg-slate-50 p-3 rounded-lg border-l-4 border-indigo-400">
-          "{result.text}"
-        </p>
-      </div>
+    <div className="text-center">
+      <p className="font-semibold text-slate-700">Gathering latest visa news…</p>
+      <p className="text-xs mt-1 text-slate-400">Searching Reddit, embassies, official sources &amp; more</p>
+    </div>
+  </div>
+);
 
-      {result.explanation && (
-        <div className="space-y-2">
-          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Analysis</h4>
-          <p className="text-sm text-slate-700 leading-relaxed">
-            {result.explanation}
-          </p>
-        </div>
-      )}
-    </div>
-
-    <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-      <span>Generated via Gemini 2.5 Flash</span>
-      <span>{new Date(result.timestamp).toLocaleTimeString()}</span>
-    </div>
+const EmptyState: React.FC<{ onReset: () => void }> = ({ onReset }) => (
+  <div className="flex flex-col items-center justify-center py-20 gap-3 text-slate-400">
+    <Filter size={32} />
+    <p className="font-medium text-slate-600">No stories match your filters</p>
+    <button onClick={onReset} className="text-sm text-indigo-600 hover:underline">Reset filters</button>
   </div>
 );
 
 // --- Main App ---
 
 const App: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [selectedText, setSelectedText] = useState<string>('');
-  const [selectionPosition, setSelectionPosition] = useState<{ x: number; y: number } | null>(null);
-  const [results, setResults] = useState<VisualResult[]>([]);
-  const [status, setStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
-  const [error, setError] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [briefing, setBriefing] = useState<DailyBriefing | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [selectedCountries, setSelectedCountries] = useState<string[]>(ALL_COUNTRIES);
+  const [showCountryFilter, setShowCountryFilter] = useState(false);
 
-  const viewerRef = useRef<HTMLDivElement>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
-      setFile(selectedFile);
-      setPdfUrl(URL.createObjectURL(selectedFile));
-      setError(null);
-    } else if (selectedFile) {
-      setError("Please select a valid PDF file.");
-    }
-  };
-
-  const handleMouseUp = useCallback(() => {
-    const selection = window.getSelection();
-    const text = selection?.toString().trim();
-    
-    if (text && text.length > 5) {
-      setSelectedText(text);
-      const range = selection?.getRangeAt(0);
-      const rect = range?.getBoundingClientRect();
-      if (rect) {
-        setSelectionPosition({
-          x: rect.left + rect.width / 2,
-          y: rect.top - 10
-        });
-      }
-    } else {
-      setSelectedText('');
-      setSelectionPosition(null);
+  const loadBriefing = useCallback(async (isRefresh = false) => {
+    if (isRefresh) setIsRefreshing(true);
+    else setIsLoading(true);
+    try {
+      const data = await fetchDailyVisaBriefing();
+      setBriefing(data);
+    } catch {
+      // service handles fallback internally
+    } finally {
+      setIsLoading(false);
+      setIsRefreshing(false);
     }
   }, []);
 
-  const handleVisualize = async () => {
-    if (!selectedText) return;
-    
-    setStatus(GenerationStatus.LOADING);
-    setError(null);
-    setSelectionPosition(null);
+  useEffect(() => { loadBriefing(); }, [loadBriefing]);
 
-    try {
-      const { imageUrl, explanation } = await generateVisualFromContext(selectedText);
-      const newResult: VisualResult = {
-        id: Math.random().toString(36).substr(2, 9),
-        text: selectedText,
-        imageUrl,
-        explanation,
-        timestamp: Date.now()
-      };
-      setResults(prev => [newResult, ...prev]);
-      setStatus(GenerationStatus.SUCCESS);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to generate visualization. Please try again.");
-      setStatus(GenerationStatus.ERROR);
-    }
-  };
+  const toggleCountry = (c: string) =>
+    setSelectedCountries(prev =>
+      prev.includes(c) ? prev.filter(x => x !== c) : [...prev, c]
+    );
 
-  const clearCurrentSelection = () => {
-    setSelectedText('');
-    setSelectionPosition(null);
-    if (window.getSelection) {
-      window.getSelection()?.removeAllRanges();
-    }
+  const filteredNews = useMemo(() => {
+    if (!briefing) return [];
+    return briefing.news.filter(item => {
+      const catOk = selectedCategory === 'all' || item.category === selectedCategory;
+      const countryOk = selectedCountries.includes(item.country);
+      return catOk && countryOk;
+    });
+  }, [briefing, selectedCategory, selectedCountries]);
+
+  const severityCounts = useMemo(() => {
+    if (!briefing) return {};
+    return briefing.news.reduce<Record<string, number>>((acc, n) => {
+      acc[n.severity] = (acc[n.severity] ?? 0) + 1;
+      return acc;
+    }, {});
+  }, [briefing]);
+
+  const resetFilters = () => {
+    setSelectedCategory('all');
+    setSelectedCountries(ALL_COUNTRIES);
   };
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
+    <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Header */}
-      <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 z-30 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-2 rounded-lg shadow-lg shadow-indigo-200">
-            <FileText className="text-white" size={20} />
-          </div>
-          <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600">
-            VisualPDF <span className="text-indigo-600 text-sm font-semibold align-top ml-1">AI</span>
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-4">
-          {file && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
-              <span className="text-xs font-medium text-slate-500 truncate max-w-[150px]">{file.name}</span>
-              <button 
-                onClick={() => {setFile(null); setPdfUrl(null); setResults([]);}} 
-                className="hover:text-red-500 text-slate-400 transition-colors"
-              >
-                <X size={14} />
-              </button>
+      <header className="sticky top-0 z-40 bg-white border-b border-slate-200 shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 h-14 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="bg-gradient-to-br from-orange-500 to-amber-500 p-2 rounded-lg shadow-md shadow-orange-200">
+              <Globe className="text-white" size={18} />
             </div>
-          )}
-          <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className={`p-2 rounded-lg transition-all ${showHistory ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-slate-100 text-slate-500'}`}
-            title="View History"
-          >
-            <History size={20} />
-          </button>
-          {!file && (
-            <label className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg cursor-pointer transition-all shadow-md hover:shadow-lg text-sm font-medium">
-              <Upload size={16} />
-              Upload PDF
-              <input type="file" className="hidden" accept=".pdf" onChange={handleFileChange} />
-            </label>
-          )}
+            <div>
+              <h1 className="text-base font-extrabold text-slate-800 leading-none">
+                🇮🇳 IndiaVisa Daily
+              </h1>
+              <p className="text-[10px] text-slate-400 leading-none mt-0.5">Visa intelligence for Indians</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* Stats chips */}
+            {briefing && !isLoading && (
+              <div className="hidden md:flex items-center gap-2 text-[11px]">
+                {Object.entries(severityCounts).map(([sev, cnt]) => {
+                  const cfg = SEVERITY_CONFIG[sev];
+                  return (
+                    <span key={sev} className={`px-2 py-0.5 rounded-full font-semibold ${cfg.badge}`}>
+                      {cnt} {sev}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Connection indicator */}
+            <div className={`hidden md:flex items-center gap-1 text-[11px] ${briefing ? 'text-emerald-600' : 'text-slate-400'}`}>
+              {briefing ? <Wifi size={13} /> : <WifiOff size={13} />}
+              <span>{briefing ? 'Live' : 'Offline'}</span>
+            </div>
+
+            <button
+              onClick={() => loadBriefing(true)}
+              disabled={isRefreshing || isLoading}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-300 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
+            >
+              <RefreshCw size={13} className={isRefreshing ? 'animate-spin' : ''} />
+              {isRefreshing ? 'Refreshing…' : 'Refresh'}
+            </button>
+          </div>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex overflow-hidden relative">
-        
-        {/* PDF Viewer Container */}
-        <section className={`flex-1 flex flex-col items-center bg-slate-200/50 p-4 md:p-8 overflow-y-auto relative transition-all duration-500 ${results.length > 0 ? 'pr-[400px]' : ''}`}>
-          {!file ? (
-            <div className="max-w-xl w-full flex flex-col items-center justify-center space-y-6 mt-12 animate-in zoom-in duration-300">
-              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-2xl border border-slate-100">
-                <Upload className="text-indigo-400 w-10 h-10" />
-              </div>
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-slate-800">Transform Reading into Seeing</h2>
-                <p className="text-slate-500 max-w-sm">Upload a content-heavy PDF, select any complex concept, and let Gemini AI visualize it instantly for you.</p>
-              </div>
-              <label className="group relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-slate-300 rounded-2xl bg-white hover:bg-indigo-50/30 hover:border-indigo-300 transition-all cursor-pointer">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="w-8 h-8 mb-3 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                  <p className="mb-2 text-sm text-slate-700"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                  <p className="text-xs text-slate-400">PDF documents only</p>
-                </div>
-                <input type="file" className="hidden" accept=".pdf" onChange={handleFileChange} />
-              </label>
-            </div>
-          ) : (
-            <div 
-              ref={viewerRef}
-              className="w-full max-w-4xl bg-white shadow-2xl rounded-sm min-h-screen relative select-text"
-              onMouseUp={handleMouseUp}
-            >
-              {/* PDF Header Controls */}
-              <div className="sticky top-0 bg-slate-900/90 backdrop-blur-md text-white p-2 flex items-center justify-between z-20 shadow-lg px-6 rounded-t-sm">
-                <div className="flex items-center gap-4 text-xs font-medium uppercase tracking-wider opacity-80">
-                  <span>Standard View</span>
-                </div>
-                <div className="flex items-center gap-2">
-                   <button className="p-1 hover:bg-white/10 rounded"><ChevronLeft size={16} /></button>
-                   <span className="text-xs">Page 1 of ?</span>
-                   <button className="p-1 hover:bg-white/10 rounded"><ChevronRight size={16} /></button>
-                </div>
-              </div>
+      {/* Critical Alerts Banner */}
+      {!isLoading && briefing && <AlertBanner alerts={briefing.criticalAlerts} />}
 
-              {/* PDF Content Mockup - For the demo, we use an iframe but we wrap it for selection interaction */}
-              <div className="relative w-full h-[200vh]">
-                <iframe 
-                  src={`${pdfUrl}#toolbar=0`} 
-                  className="w-full h-full border-none pointer-events-none" 
-                  title="PDF Document"
-                />
-                {/* Overlay for selection - Note: Iframe selection is tricky. 
-                    In a production app, we would render the PDF using pdf.js text layer.
-                    For this prompt, we'll provide a high-fidelity "Reader mode" view. */}
-                <div className="absolute inset-0 bg-transparent z-10 p-12 overflow-hidden pointer-events-auto">
-                   {/* This is a transparent layer that allows selection of text if we had the text layer rendered.
-                       Since we are generating a full functional SPA, I'll simulate the text layer for demo interactivity. */}
-                   <div className="max-w-3xl mx-auto space-y-6 text-slate-800 text-lg leading-relaxed pointer-events-auto">
-                     <h1 className="text-3xl font-bold mb-8">Executive Summary: Quantum Mechanics and Wave Particle Duality</h1>
-                     <p>
-                       Quantum mechanics is a fundamental theory in physics that provides a description of the physical properties of nature at the scale of atoms and subatomic particles. It is the foundation of all quantum physics including quantum chemistry, quantum field theory, quantum technology, and quantum information science.
-                     </p>
-                     <p className="bg-yellow-50 px-1">
-                       One of the most profound concepts is <span className="font-bold underline decoration-indigo-500">Wave-Particle Duality</span>. This principle states that every particle or quantum entity may be described as either a particle or a wave. It expresses the inability of the classical concepts "particle" or "wave" to fully describe the behavior of quantum-scale objects.
-                     </p>
-                     <p>
-                       Consider the double-slit experiment. When light shines through two narrow slits, it creates an interference pattern on a screen, characteristic of waves. However, when observed at the slits, light behaves as individual discrete particles (photons).
-                     </p>
-                     <h2 className="text-2xl font-semibold mt-8">The Heisenberg Uncertainty Principle</h2>
-                     <p>
-                       Introduced in 1927 by Werner Heisenberg, the principle states that the more precisely the position of some particle is determined, the less precisely its momentum can be predicted from initial conditions, and vice versa.
-                     </p>
-                     <p className="text-slate-400 italic mt-12 text-sm">
-                       [Select any text above to see the AI Visualize feature in action...]
-                     </p>
-                   </div>
-                </div>
-              </div>
+      {/* Main */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-6 space-y-6">
 
-              {/* Floating Action Button for Selection */}
-              {selectionPosition && (
-                <div 
-                  className="fixed z-50 animate-in fade-in zoom-in duration-200"
-                  style={{ 
-                    left: `${selectionPosition.x}px`, 
-                    top: `${selectionPosition.y - 45}px`,
-                    transform: 'translateX(-50%)'
-                  }}
-                >
-                  <button 
-                    onClick={handleVisualize}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-full shadow-xl shadow-indigo-200 transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
+        {isLoading ? (
+          <LoadingState />
+        ) : briefing ? (
+          <>
+            {/* Summary */}
+            <SummaryCard briefing={briefing} />
+
+            {/* Filters */}
+            <div className="space-y-3">
+              {/* Category tabs — horizontal scroll */}
+              <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+                {CATEGORIES.map(cat => (
+                  <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id)}
+                    className={`shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all border ${
+                      selectedCategory === cat.id
+                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300 hover:text-indigo-600'
+                    }`}
                   >
-                    <Sparkles size={16} />
-                    <span className="text-sm font-semibold">Visualize selection</span>
+                    <span>{cat.emoji}</span>
+                    {cat.label}
                   </button>
-                  <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-indigo-600 mx-auto"></div>
-                </div>
-              )}
+                ))}
+              </div>
+
+              {/* Country filter */}
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setShowCountryFilter(!showCountryFilter)}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-slate-200 hover:border-indigo-300 text-slate-600 hover:text-indigo-600 transition-colors"
+                >
+                  <Filter size={12} />
+                  Countries ({selectedCountries.length}/{ALL_COUNTRIES.length})
+                  {showCountryFilter ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                </button>
+                {showCountryFilter && ALL_COUNTRIES.map(c => (
+                  <button
+                    key={c}
+                    onClick={() => toggleCountry(c)}
+                    className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium transition-all border ${
+                      selectedCountries.includes(c)
+                        ? 'bg-slate-800 text-white border-slate-800'
+                        : 'bg-white text-slate-500 border-slate-200 opacity-50'
+                    }`}
+                  >
+                    {COUNTRY_FLAGS[c] ?? '🌍'} {c}
+                  </button>
+                ))}
+              </div>
+
+              {/* Results count */}
+              <p className="text-[11px] text-slate-400">
+                Showing <span className="font-semibold text-slate-600">{filteredNews.length}</span> of{' '}
+                {briefing.news.length} stories · Last updated:{' '}
+                {new Date(briefing.generatedAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+              </p>
             </div>
-          )}
-        </section>
 
-        {/* Results Side Panel */}
-        <aside className={`fixed right-0 top-14 bottom-0 w-[400px] bg-slate-50 border-l border-slate-200 z-20 transition-transform duration-500 ease-in-out ${results.length > 0 ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="flex flex-col h-full p-4 gap-4 relative">
-            {status === GenerationStatus.LOADING && (
-              <LoadingOverlay message="Gemini is analyzing context..." />
-            )}
-
-            {results.length > 0 ? (
-              <VisualCard 
-                result={results[0]} 
-                onClose={() => setResults(prev => prev.filter(r => r.id !== results[0].id))} 
-              />
+            {/* News Grid */}
+            {filteredNews.length === 0 ? (
+              <EmptyState onReset={resetFilters} />
             ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-400 space-y-2 opacity-60">
-                <ImageIcon size={32} />
-                <p className="text-sm font-medium">No active visualization</p>
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                {filteredNews.map(item => (
+                  <NewsCard key={item.id} item={item} />
+                ))}
               </div>
             )}
-            
-            {/* History mini-drawer (if history is open) */}
-            {showHistory && (
-              <div className="absolute inset-0 bg-white z-40 p-6 animate-in slide-in-from-bottom duration-300 flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="font-bold text-slate-800">Visual History</h3>
-                  <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-slate-600">
-                    <X size={20} />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-4">
-                  {results.slice(1).length === 0 ? (
-                    <div className="text-center py-12 text-slate-400">
-                      <p className="text-sm">Earlier generations will appear here.</p>
-                    </div>
-                  ) : (
-                    results.slice(1).map(res => (
-                      <div key={res.id} className="group cursor-pointer bg-slate-50 rounded-lg p-2 border border-slate-100 hover:border-indigo-200 transition-colors" onClick={() => {
-                        // Swap current and selected
-                        setResults(prev => [res, ...prev.filter(p => p.id !== res.id)]);
-                        setShowHistory(false);
-                      }}>
-                        <img src={res.imageUrl} className="w-full h-24 object-cover rounded mb-2 grayscale group-hover:grayscale-0 transition-all" alt="History" />
-                        <p className="text-[10px] text-slate-500 line-clamp-2 italic">"{res.text}"</p>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        </aside>
-
-        {/* Global Error Toast */}
-        {error && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-bottom duration-300 z-[100]">
-            <AlertCircle size={18} />
-            <span className="text-sm font-medium">{error}</span>
-            <button onClick={() => setError(null)} className="ml-2 hover:bg-red-100 rounded-full p-1 transition-colors">
-              <X size={14} />
-            </button>
-          </div>
-        )}
+          </>
+        ) : null}
       </main>
 
-      {/* Persistent CTA / Instructions for new users */}
-      {!file && (
-        <footer className="h-10 bg-indigo-600 text-white/90 text-[11px] font-medium flex items-center justify-center gap-4 shrink-0 px-6">
-          <span className="flex items-center gap-1"><Sparkles size={12} /> Real-time Contextual Generation</span>
-          <span className="w-1 h-1 bg-white/30 rounded-full"></span>
-          <span>Powered by Gemini 2.5 Flash</span>
-          <span className="hidden md:block w-1 h-1 bg-white/30 rounded-full"></span>
-          <span className="hidden md:block">Optimized for Academic & Professional Papers</span>
-        </footer>
-      )}
+      {/* Footer */}
+      <footer className="bg-white border-t border-slate-200 py-4">
+        <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row items-center justify-between gap-3 text-[11px] text-slate-400">
+          <div className="flex items-center gap-2">
+            <Sparkles size={12} className="text-indigo-400" />
+            <span>Powered by <span className="font-semibold text-slate-600">Gemini AI</span> with Google Search grounding</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span>Sources: Reddit · US Embassy India · VFS Global · USCIS · UKVI · IRCC · News outlets</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <ExternalLink size={11} />
+            <span>For informational purposes only. Consult a licensed immigration attorney.</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

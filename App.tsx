@@ -1,20 +1,22 @@
 
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { 
-  FileText, 
-  Upload, 
-  Sparkles, 
-  Image as ImageIcon, 
-  ChevronLeft, 
+import {
+  FileText,
+  Upload,
+  Sparkles,
+  Image as ImageIcon,
+  ChevronLeft,
   ChevronRight,
   Loader2,
   X,
   History,
   Maximize2,
-  AlertCircle
+  AlertCircle,
+  ClipboardList
 } from 'lucide-react';
 import { VisualResult, GenerationStatus } from './types';
 import { generateVisualFromContext } from './services/gemini';
+import AISGenerator from './AISGenerator';
 
 // --- Sub-components (Outside App for cleanliness) ---
 
@@ -79,6 +81,7 @@ const VisualCard: React.FC<{ result: VisualResult; onClose: () => void }> = ({ r
 // --- Main App ---
 
 const App: React.FC = () => {
+  const [activeMode, setActiveMode] = useState<'visualpdf' | 'ais'>('ais');
   const [file, setFile] = useState<File | null>(null);
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [selectedText, setSelectedText] = useState<string>('');
@@ -163,41 +166,70 @@ const App: React.FC = () => {
             <FileText className="text-white" size={20} />
           </div>
           <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600">
-            VisualPDF <span className="text-indigo-600 text-sm font-semibold align-top ml-1">AI</span>
+            VisualiEducate <span className="text-indigo-600 text-sm font-semibold align-top ml-1">AI</span>
           </h1>
         </div>
 
+        {/* Mode Tabs */}
+        <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-1">
+          <button
+            onClick={() => setActiveMode('ais')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${activeMode === 'ais' ? 'bg-white text-blue-800 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <ClipboardList size={14} />
+            AIS Generator
+          </button>
+          <button
+            onClick={() => setActiveMode('visualpdf')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${activeMode === 'visualpdf' ? 'bg-white text-indigo-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            <Sparkles size={14} />
+            Visual PDF
+          </button>
+        </div>
+
         <div className="flex items-center gap-4">
-          {file && (
+          {activeMode === 'visualpdf' && file && (
             <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
               <span className="text-xs font-medium text-slate-500 truncate max-w-[150px]">{file.name}</span>
-              <button 
-                onClick={() => {setFile(null); setPdfUrl(null); setResults([]);}} 
+              <button
+                onClick={() => { setFile(null); setPdfUrl(null); setResults([]); }}
                 className="hover:text-red-500 text-slate-400 transition-colors"
               >
                 <X size={14} />
               </button>
             </div>
           )}
-          <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className={`p-2 rounded-lg transition-all ${showHistory ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-slate-100 text-slate-500'}`}
-            title="View History"
-          >
-            <History size={20} />
-          </button>
-          {!file && (
-            <label className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg cursor-pointer transition-all shadow-md hover:shadow-lg text-sm font-medium">
-              <Upload size={16} />
-              Upload PDF
-              <input type="file" className="hidden" accept=".pdf" onChange={handleFileChange} />
-            </label>
+          {activeMode === 'visualpdf' && (
+            <>
+              <button
+                onClick={() => setShowHistory(!showHistory)}
+                className={`p-2 rounded-lg transition-all ${showHistory ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-slate-100 text-slate-500'}`}
+                title="View History"
+              >
+                <History size={20} />
+              </button>
+              {!file && (
+                <label className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg cursor-pointer transition-all shadow-md hover:shadow-lg text-sm font-medium">
+                  <Upload size={16} />
+                  Upload PDF
+                  <input type="file" className="hidden" accept=".pdf" onChange={handleFileChange} />
+                </label>
+              )}
+            </>
           )}
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex overflow-hidden relative">
+      {/* AIS Generator Mode */}
+      {activeMode === 'ais' && (
+        <div className="flex-1 overflow-hidden">
+          <AISGenerator />
+        </div>
+      )}
+
+      {/* Visual PDF Mode */}
+      {activeMode === 'visualpdf' && <main className="flex-1 flex overflow-hidden relative">
         
         {/* PDF Viewer Container */}
         <section className={`flex-1 flex flex-col items-center bg-slate-200/50 p-4 md:p-8 overflow-y-auto relative transition-all duration-500 ${results.length > 0 ? 'pr-[400px]' : ''}`}>
@@ -357,16 +389,16 @@ const App: React.FC = () => {
             </button>
           </div>
         )}
-      </main>
+      </main>}
 
-      {/* Persistent CTA / Instructions for new users */}
-      {!file && (
+      {/* Persistent CTA for VisualPDF mode */}
+      {activeMode === 'visualpdf' && !file && (
         <footer className="h-10 bg-indigo-600 text-white/90 text-[11px] font-medium flex items-center justify-center gap-4 shrink-0 px-6">
           <span className="flex items-center gap-1"><Sparkles size={12} /> Real-time Contextual Generation</span>
           <span className="w-1 h-1 bg-white/30 rounded-full"></span>
           <span>Powered by Gemini 2.5 Flash</span>
           <span className="hidden md:block w-1 h-1 bg-white/30 rounded-full"></span>
-          <span className="hidden md:block">Optimized for Academic & Professional Papers</span>
+          <span className="hidden md:block">Optimized for Academic &amp; Professional Papers</span>
         </footer>
       )}
     </div>

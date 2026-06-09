@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useRef } from "react";
 
 const modules = [
   {
@@ -104,11 +104,418 @@ const phases = [
   { num: "05", title: "Hologram Mode", dur: "Month 6+", desc: "Full AR/hologram experience for family events, memorials, and next-generation connection.", color: "#C86E6E" },
 ];
 
+// ─── Registration Wizard ────────────────────────────────────────────────────
+
+type RegProps = {
+  step: number; setStep: (n: number) => void;
+  profile: { name: string; tagline: string; message: string };
+  setProfile: (p: { name: string; tagline: string; message: string }) => void;
+  photos: { url: string; name: string }[]; setPhotos: (p: { url: string; name: string }[]) => void;
+  voiceBlob: Blob | null; setVoiceBlob: (b: Blob | null) => void;
+  voiceUrl: string | null; setVoiceUrl: (u: string | null) => void;
+  isRecording: boolean; setIsRecording: (b: boolean) => void;
+  recordingSecs: number; setRecordingSecs: React.Dispatch<React.SetStateAction<number>>;
+  regComplete: boolean; setRegComplete: (b: boolean) => void;
+  friendInput: string; setFriendInput: (s: string) => void;
+  friends: string[]; setFriends: (f: string[]) => void;
+  shareCode: string;
+  mediaRecorderRef: React.MutableRefObject<MediaRecorder | null>;
+  chunksRef: React.MutableRefObject<Blob[]>;
+  timerRef: React.MutableRefObject<ReturnType<typeof setInterval> | null>;
+};
+
+const STEPS = ["Identity", "Photos", "Voice", "Share"];
+
+function RegisterWizard(props: RegProps) {
+  const {
+    step, setStep, profile, setProfile,
+    photos, setPhotos, voiceBlob, setVoiceBlob, voiceUrl, setVoiceUrl,
+    isRecording, setIsRecording, recordingSecs, setRecordingSecs,
+    regComplete, setRegComplete, friendInput, setFriendInput, friends, setFriends,
+    shareCode, mediaRecorderRef, chunksRef, timerRef,
+  } = props;
+
+  // Photo upload
+  function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []) as File[];
+    const newPhotos = files.map(f => ({ url: URL.createObjectURL(f), name: f.name }));
+    setPhotos([...photos, ...newPhotos].slice(0, 6));
+  }
+
+  // Voice recording
+  async function startRecording() {
+    chunksRef.current = [];
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      mediaRecorderRef.current = mr;
+      mr.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        setVoiceBlob(blob);
+        setVoiceUrl(URL.createObjectURL(blob));
+      };
+      mr.start();
+      setIsRecording(true);
+      setRecordingSecs(0);
+      timerRef.current = setInterval(() => setRecordingSecs(s => s + 1), 1000);
+    } catch {
+      alert("Microphone access denied. Please allow mic access and try again.");
+    }
+  }
+
+  function stopRecording() {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+    if (timerRef.current) clearInterval(timerRef.current);
+  }
+
+  function addFriend() {
+    const val = friendInput.trim();
+    if (val && !friends.includes(val)) {
+      setFriends([...friends, val]);
+      setFriendInput("");
+    }
+  }
+
+  const canNext = [
+    profile.name.trim().length > 0,
+    true,
+    true,
+    true,
+  ][step];
+
+  if (regComplete) {
+    return (
+      <div style={{ maxWidth: "560px", margin: "0 auto", textAlign: "center", paddingTop: "32px" }}>
+        <div style={{ fontSize: "56px", marginBottom: "16px" }}>✨</div>
+        <h2 style={{ color: "#C4A8F0", fontWeight: "400", fontSize: "28px", margin: "0 0 12px" }}>
+          Your Avatar is Live
+        </h2>
+        <p style={{ color: "rgba(232,224,208,0.6)", fontSize: "15px", lineHeight: "1.7", marginBottom: "32px" }}>
+          <strong style={{ color: "#E8E0D0" }}>{profile.name}</strong>, your presence is now registered.
+          {friends.length > 0 && <> Invites sent to <strong style={{ color: "#E8E0D0" }}>{friends.length} friend{friends.length > 1 ? "s" : ""}</strong>.</>}
+        </p>
+
+        {/* Profile preview card */}
+        <div style={{
+          background: "rgba(155,110,200,0.1)",
+          border: "1px solid rgba(155,110,200,0.3)",
+          borderRadius: "20px",
+          padding: "28px",
+          marginBottom: "24px",
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "16px", marginBottom: "20px", textAlign: "left" }}>
+            {photos[0] ? (
+              <img src={photos[0].url} alt="avatar" style={{ width: "64px", height: "64px", borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(155,110,200,0.5)" }} />
+            ) : (
+              <div style={{ width: "64px", height: "64px", borderRadius: "50%", background: "rgba(155,110,200,0.2)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "28px" }}>👤</div>
+            )}
+            <div>
+              <div style={{ fontSize: "18px", fontWeight: "600", color: "#E8E0D0" }}>{profile.name}</div>
+              {profile.tagline && <div style={{ fontSize: "13px", color: "rgba(232,224,208,0.5)", fontStyle: "italic" }}>{profile.tagline}</div>}
+            </div>
+          </div>
+          {profile.message && (
+            <div style={{ background: "rgba(10,10,15,0.5)", borderRadius: "10px", padding: "14px", fontSize: "14px", color: "rgba(232,224,208,0.75)", lineHeight: "1.6", fontStyle: "italic", textAlign: "left", borderLeft: "3px solid rgba(155,110,200,0.4)" }}>
+              "{profile.message}"
+            </div>
+          )}
+          {voiceUrl && (
+            <div style={{ marginTop: "16px", textAlign: "left" }}>
+              <div style={{ fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(155,110,200,0.7)", marginBottom: "8px" }}>Voice Sample</div>
+              <audio controls src={voiceUrl} style={{ width: "100%", height: "36px", opacity: 0.85 }} />
+            </div>
+          )}
+          <div style={{ marginTop: "20px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div style={{ fontSize: "12px", color: "rgba(232,224,208,0.4)" }}>Share code</div>
+            <div style={{
+              fontFamily: "monospace", fontSize: "18px", fontWeight: "700",
+              color: "#C4A8F0", letterSpacing: "4px",
+              background: "rgba(155,110,200,0.15)", padding: "6px 16px", borderRadius: "8px"
+            }}>{shareCode}</div>
+          </div>
+        </div>
+
+        {friends.length > 0 && (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", justifyContent: "center", marginBottom: "24px" }}>
+            {friends.map((f, i) => (
+              <span key={i} style={{ background: "rgba(110,181,200,0.12)", border: "1px solid rgba(110,181,200,0.25)", borderRadius: "100px", padding: "4px 14px", fontSize: "12px", color: "#6EB5C8" }}>{f}</span>
+            ))}
+          </div>
+        )}
+
+        <button onClick={() => { setRegComplete(false); setStep(0); }} style={{
+          background: "transparent", border: "1px solid rgba(232,224,208,0.2)",
+          color: "rgba(232,224,208,0.5)", borderRadius: "100px", padding: "8px 24px",
+          cursor: "pointer", fontSize: "13px"
+        }}>Edit Profile</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ maxWidth: "600px", margin: "0 auto" }}>
+      {/* Step indicator */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "0", marginBottom: "40px" }}>
+        {STEPS.map((label, i) => (
+          <div key={i} style={{ display: "flex", alignItems: "center" }}>
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "6px" }}>
+              <div style={{
+                width: "32px", height: "32px", borderRadius: "50%",
+                background: i < step ? "rgba(155,110,200,0.4)" : i === step ? "rgba(155,110,200,0.2)" : "rgba(232,224,208,0.05)",
+                border: i <= step ? "2px solid #9B6EC8" : "2px solid rgba(232,224,208,0.15)",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: "12px", fontWeight: "700",
+                color: i <= step ? "#C4A8F0" : "rgba(232,224,208,0.3)",
+                transition: "all 0.3s"
+              }}>
+                {i < step ? "✓" : i + 1}
+              </div>
+              <div style={{ fontSize: "10px", letterSpacing: "1px", textTransform: "uppercase", color: i === step ? "#C4A8F0" : "rgba(232,224,208,0.3)" }}>{label}</div>
+            </div>
+            {i < STEPS.length - 1 && (
+              <div style={{ width: "60px", height: "2px", background: i < step ? "rgba(155,110,200,0.4)" : "rgba(232,224,208,0.08)", margin: "0 8px", marginBottom: "20px", transition: "all 0.3s" }} />
+            )}
+          </div>
+        ))}
+      </div>
+
+      {/* Step 0 — Identity */}
+      {step === 0 && (
+        <div style={{ background: "rgba(155,110,200,0.07)", border: "1px solid rgba(155,110,200,0.2)", borderRadius: "20px", padding: "32px" }}>
+          <h3 style={{ color: "#C4A8F0", fontWeight: "400", fontSize: "20px", margin: "0 0 6px" }}>Who are you?</h3>
+          <p style={{ color: "rgba(232,224,208,0.45)", fontSize: "13px", margin: "0 0 28px", fontStyle: "italic" }}>Your name and a few words — this becomes your living presence.</p>
+          <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+            <div>
+              <label style={{ fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(155,110,200,0.7)", display: "block", marginBottom: "8px" }}>Full Name *</label>
+              <input
+                value={profile.name}
+                onChange={e => setProfile({ ...profile, name: e.target.value })}
+                placeholder="e.g. Arjun Sharma"
+                style={{ width: "100%", background: "rgba(10,10,15,0.6)", border: "1px solid rgba(155,110,200,0.25)", borderRadius: "10px", padding: "12px 16px", color: "#E8E0D0", fontSize: "15px", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(155,110,200,0.7)", display: "block", marginBottom: "8px" }}>Tagline</label>
+              <input
+                value={profile.tagline}
+                onChange={e => setProfile({ ...profile, tagline: e.target.value })}
+                placeholder="e.g. Father, dreamer, storyteller"
+                style={{ width: "100%", background: "rgba(10,10,15,0.6)", border: "1px solid rgba(155,110,200,0.25)", borderRadius: "10px", padding: "12px 16px", color: "#E8E0D0", fontSize: "15px", outline: "none", boxSizing: "border-box" }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(155,110,200,0.7)", display: "block", marginBottom: "8px" }}>A message to share</label>
+              <textarea
+                value={profile.message}
+                onChange={e => setProfile({ ...profile, message: e.target.value })}
+                placeholder="Something you want your friends to always remember…"
+                rows={3}
+                style={{ width: "100%", background: "rgba(10,10,15,0.6)", border: "1px solid rgba(155,110,200,0.25)", borderRadius: "10px", padding: "12px 16px", color: "#E8E0D0", fontSize: "14px", outline: "none", resize: "vertical", fontFamily: "inherit", lineHeight: "1.6", boxSizing: "border-box" }}
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Step 1 — Photos */}
+      {step === 1 && (
+        <div style={{ background: "rgba(200,169,110,0.06)", border: "1px solid rgba(200,169,110,0.2)", borderRadius: "20px", padding: "32px" }}>
+          <h3 style={{ color: "#C8A96E", fontWeight: "400", fontSize: "20px", margin: "0 0 6px" }}>Your Face, Your Story</h3>
+          <p style={{ color: "rgba(232,224,208,0.45)", fontSize: "13px", margin: "0 0 28px", fontStyle: "italic" }}>Upload up to 6 photos — selfies, events, everyday moments. These train your avatar.</p>
+          <label style={{
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            border: "2px dashed rgba(200,169,110,0.3)", borderRadius: "14px", padding: "28px",
+            cursor: "pointer", marginBottom: "20px", transition: "all 0.2s"
+          }}>
+            <div style={{ fontSize: "32px", marginBottom: "8px" }}>📸</div>
+            <div style={{ fontSize: "14px", color: "rgba(232,224,208,0.6)" }}>Click to upload photos</div>
+            <div style={{ fontSize: "11px", color: "rgba(232,224,208,0.3)", marginTop: "4px" }}>JPG, PNG — up to 6 photos</div>
+            <input type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoChange} />
+          </label>
+          {photos.length > 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "10px" }}>
+              {photos.map((p, i) => (
+                <div key={i} style={{ position: "relative", aspectRatio: "1", borderRadius: "10px", overflow: "hidden", border: "1px solid rgba(200,169,110,0.2)" }}>
+                  <img src={p.url} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  <button onClick={() => setPhotos(photos.filter((_, j) => j !== i))} style={{
+                    position: "absolute", top: "4px", right: "4px",
+                    background: "rgba(10,10,15,0.8)", border: "none", borderRadius: "50%",
+                    width: "22px", height: "22px", cursor: "pointer", color: "#E8E0D0", fontSize: "12px",
+                    display: "flex", alignItems: "center", justifyContent: "center"
+                  }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Step 2 — Voice */}
+      {step === 2 && (
+        <div style={{ background: "rgba(110,200,122,0.06)", border: "1px solid rgba(110,200,122,0.2)", borderRadius: "20px", padding: "32px" }}>
+          <h3 style={{ color: "#6EC87A", fontWeight: "400", fontSize: "20px", margin: "0 0 6px" }}>Your Voice</h3>
+          <p style={{ color: "rgba(232,224,208,0.45)", fontSize: "13px", margin: "0 0 28px", fontStyle: "italic" }}>Record a short voice sample (10–60 sec). Say anything — a memory, a wish, a greeting.</p>
+
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            {!voiceUrl ? (
+              <div>
+                <button
+                  onClick={isRecording ? stopRecording : startRecording}
+                  style={{
+                    width: "88px", height: "88px", borderRadius: "50%",
+                    background: isRecording ? "rgba(200,110,110,0.2)" : "rgba(110,200,122,0.15)",
+                    border: isRecording ? "3px solid #C86E6E" : "3px solid #6EC87A",
+                    cursor: "pointer", fontSize: "28px", transition: "all 0.2s",
+                    display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto",
+                    boxShadow: isRecording ? "0 0 24px rgba(200,110,110,0.3)" : "none"
+                  }}
+                >
+                  {isRecording ? "⏹" : "🎙"}
+                </button>
+                <div style={{ marginTop: "16px", fontSize: "14px", color: isRecording ? "#C86E6E" : "rgba(232,224,208,0.5)" }}>
+                  {isRecording ? (
+                    <span>Recording… {recordingSecs}s <span style={{ animation: "pulse 1s infinite" }}>●</span></span>
+                  ) : "Tap to start recording"}
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div style={{ fontSize: "36px", marginBottom: "12px" }}>✅</div>
+                <div style={{ fontSize: "14px", color: "#6EC87A", marginBottom: "16px" }}>Voice sample recorded ({recordingSecs}s)</div>
+                <audio controls src={voiceUrl} style={{ width: "100%", marginBottom: "16px" }} />
+                <button onClick={() => { setVoiceBlob(null); setVoiceUrl(null); setRecordingSecs(0); }} style={{
+                  background: "transparent", border: "1px solid rgba(232,224,208,0.2)",
+                  color: "rgba(232,224,208,0.5)", borderRadius: "100px", padding: "6px 20px",
+                  cursor: "pointer", fontSize: "12px"
+                }}>Re-record</button>
+              </div>
+            )}
+          </div>
+
+          <div style={{ marginTop: "16px", borderTop: "1px solid rgba(110,200,122,0.1)", paddingTop: "20px" }}>
+            <div style={{ fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(110,200,122,0.6)", marginBottom: "10px" }}>Or upload an audio file</div>
+            <label style={{
+              display: "inline-flex", alignItems: "center", gap: "8px",
+              background: "rgba(10,10,15,0.5)", border: "1px solid rgba(110,200,122,0.2)",
+              borderRadius: "100px", padding: "8px 20px", cursor: "pointer", fontSize: "13px", color: "rgba(232,224,208,0.6)"
+            }}>
+              📁 Upload audio
+              <input type="file" accept="audio/*" style={{ display: "none" }} onChange={e => {
+                const f = e.target.files?.[0];
+                if (f) { setVoiceBlob(f); setVoiceUrl(URL.createObjectURL(f)); setRecordingSecs(0); }
+              }} />
+            </label>
+          </div>
+        </div>
+      )}
+
+      {/* Step 3 — Share */}
+      {step === 3 && (
+        <div style={{ background: "rgba(110,181,200,0.06)", border: "1px solid rgba(110,181,200,0.2)", borderRadius: "20px", padding: "32px" }}>
+          <h3 style={{ color: "#6EB5C8", fontWeight: "400", fontSize: "20px", margin: "0 0 6px" }}>Connect with Friends</h3>
+          <p style={{ color: "rgba(232,224,208,0.45)", fontSize: "13px", margin: "0 0 28px", fontStyle: "italic" }}>Invite friends to connect with your avatar. They'll receive your presence — your voice, your words.</p>
+
+          <div style={{ background: "rgba(10,10,15,0.5)", borderRadius: "14px", padding: "20px", marginBottom: "24px", textAlign: "center" }}>
+            <div style={{ fontSize: "11px", letterSpacing: "2px", textTransform: "uppercase", color: "rgba(110,181,200,0.6)", marginBottom: "10px" }}>Your Share Code</div>
+            <div style={{ fontFamily: "monospace", fontSize: "32px", fontWeight: "700", color: "#6EB5C8", letterSpacing: "8px" }}>{shareCode}</div>
+            <div style={{ fontSize: "12px", color: "rgba(232,224,208,0.35)", marginTop: "8px" }}>Friends enter this code to connect with you</div>
+          </div>
+
+          <div style={{ marginBottom: "20px" }}>
+            <label style={{ fontSize: "11px", letterSpacing: "1.5px", textTransform: "uppercase", color: "rgba(110,181,200,0.6)", display: "block", marginBottom: "10px" }}>Invite by name or handle</label>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <input
+                value={friendInput}
+                onChange={e => setFriendInput(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && addFriend()}
+                placeholder="e.g. Priya, @rahul_k, Meera"
+                style={{ flex: 1, background: "rgba(10,10,15,0.6)", border: "1px solid rgba(110,181,200,0.25)", borderRadius: "10px", padding: "11px 16px", color: "#E8E0D0", fontSize: "14px", outline: "none" }}
+              />
+              <button onClick={addFriend} style={{
+                background: "rgba(110,181,200,0.15)", border: "1px solid rgba(110,181,200,0.3)",
+                borderRadius: "10px", padding: "11px 20px", cursor: "pointer", color: "#6EB5C8", fontSize: "14px"
+              }}>Add</button>
+            </div>
+          </div>
+
+          {friends.length > 0 && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {friends.map((f, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(110,181,200,0.1)", border: "1px solid rgba(110,181,200,0.2)", borderRadius: "100px", padding: "5px 12px" }}>
+                  <span style={{ fontSize: "13px", color: "#6EB5C8" }}>{f}</span>
+                  <button onClick={() => setFriends(friends.filter((_, j) => j !== i))} style={{ background: "none", border: "none", color: "rgba(110,181,200,0.5)", cursor: "pointer", fontSize: "14px", padding: "0", lineHeight: 1 }}>×</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Navigation */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "28px" }}>
+        <button
+          onClick={() => setStep(Math.max(0, step - 1))}
+          disabled={step === 0}
+          style={{
+            background: "transparent", border: "1px solid rgba(232,224,208,0.15)",
+            color: step === 0 ? "rgba(232,224,208,0.2)" : "rgba(232,224,208,0.5)",
+            borderRadius: "100px", padding: "10px 28px", cursor: step === 0 ? "default" : "pointer", fontSize: "13px"
+          }}
+        >← Back</button>
+
+        {step < STEPS.length - 1 ? (
+          <button
+            onClick={() => canNext && setStep(step + 1)}
+            disabled={!canNext}
+            style={{
+              background: canNext ? "rgba(155,110,200,0.2)" : "rgba(155,110,200,0.05)",
+              border: `1px solid ${canNext ? "rgba(155,110,200,0.5)" : "rgba(155,110,200,0.15)"}`,
+              color: canNext ? "#C4A8F0" : "rgba(155,110,200,0.3)",
+              borderRadius: "100px", padding: "10px 28px", cursor: canNext ? "pointer" : "default", fontSize: "13px",
+              transition: "all 0.2s"
+            }}
+          >Continue →</button>
+        ) : (
+          <button
+            onClick={() => setRegComplete(true)}
+            style={{
+              background: "rgba(155,110,200,0.25)", border: "1px solid rgba(155,110,200,0.5)",
+              color: "#C4A8F0", borderRadius: "100px", padding: "10px 32px",
+              cursor: "pointer", fontSize: "13px", fontWeight: "600"
+            }}
+          >✦ Create My Avatar</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main App ───────────────────────────────────────────────────────────────
+
 export default function App() {
   const [activeModule, setActiveModule] = useState("identity");
-  const [activeTab, setActiveTab] = useState("modules");
+  const [activeTab, setActiveTab] = useState("register");
 
   const current = modules.find(m => m.id === activeModule);
+
+  // Registration wizard state
+  const [regStep, setRegStep] = useState(0);
+  const [regProfile, setRegProfile] = useState({ name: "", tagline: "", message: "" });
+  const [regPhotos, setRegPhotos] = useState<{ url: string; name: string }[]>([]);
+  const [voiceBlob, setVoiceBlob] = useState<Blob | null>(null);
+  const [voiceUrl, setVoiceUrl] = useState<string | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSecs, setRecordingSecs] = useState(0);
+  const [regComplete, setRegComplete] = useState(false);
+  const [friendInput, setFriendInput] = useState("");
+  const [friends, setFriends] = useState<string[]>([]);
+  const [shareCode] = useState(() => Math.random().toString(36).substring(2, 8).toUpperCase());
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   return (
     <div style={{
@@ -173,6 +580,7 @@ export default function App() {
           marginTop: "32px", flexWrap: "wrap"
         }}>
           {[
+            { id: "register", label: "✦ My Avatar" },
             { id: "modules", label: "Core Modules" },
             { id: "roadmap", label: "Build Roadmap" },
             { id: "tech", label: "Tech Stack" },
@@ -181,9 +589,15 @@ export default function App() {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
               padding: "8px 20px",
               borderRadius: "100px",
-              border: activeTab === tab.id ? "1px solid #C8A96E" : "1px solid rgba(232,224,208,0.15)",
-              background: activeTab === tab.id ? "rgba(200,169,110,0.15)" : "transparent",
-              color: activeTab === tab.id ? "#C8A96E" : "rgba(232,224,208,0.5)",
+              border: tab.id === "register"
+                ? (activeTab === "register" ? "1px solid #9B6EC8" : "1px solid rgba(155,110,200,0.4)")
+                : activeTab === tab.id ? "1px solid #C8A96E" : "1px solid rgba(232,224,208,0.15)",
+              background: tab.id === "register"
+                ? (activeTab === "register" ? "rgba(155,110,200,0.25)" : "rgba(155,110,200,0.1)")
+                : activeTab === tab.id ? "rgba(200,169,110,0.15)" : "transparent",
+              color: tab.id === "register"
+                ? (activeTab === "register" ? "#C4A8F0" : "#B89FE0")
+                : activeTab === tab.id ? "#C8A96E" : "rgba(232,224,208,0.5)",
               cursor: "pointer",
               fontSize: "13px",
               letterSpacing: "0.5px",
@@ -194,6 +608,26 @@ export default function App() {
       </div>
 
       <div style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "0 auto", padding: "32px 16px 64px" }}>
+
+        {/* REGISTER TAB */}
+        {activeTab === "register" && (
+          <RegisterWizard
+            step={regStep} setStep={setRegStep}
+            profile={regProfile} setProfile={setRegProfile}
+            photos={regPhotos} setPhotos={setRegPhotos}
+            voiceBlob={voiceBlob} setVoiceBlob={setVoiceBlob}
+            voiceUrl={voiceUrl} setVoiceUrl={setVoiceUrl}
+            isRecording={isRecording} setIsRecording={setIsRecording}
+            recordingSecs={recordingSecs} setRecordingSecs={setRecordingSecs}
+            regComplete={regComplete} setRegComplete={setRegComplete}
+            friendInput={friendInput} setFriendInput={setFriendInput}
+            friends={friends} setFriends={setFriends}
+            shareCode={shareCode}
+            mediaRecorderRef={mediaRecorderRef}
+            chunksRef={chunksRef}
+            timerRef={timerRef}
+          />
+        )}
 
         {/* MODULES TAB */}
         {activeTab === "modules" && (

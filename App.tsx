@@ -1,376 +1,391 @@
+import { useState } from "react";
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { 
-  FileText, 
-  Upload, 
-  Sparkles, 
-  Image as ImageIcon, 
-  ChevronLeft, 
-  ChevronRight,
-  Loader2,
-  X,
-  History,
-  Maximize2,
-  AlertCircle
-} from 'lucide-react';
-import { VisualResult, GenerationStatus } from './types';
-import { generateVisualFromContext } from './services/gemini';
+const modules = [
+  {
+    id: "identity",
+    icon: "👤",
+    title: "Identity Engine",
+    subtitle: "Who they were",
+    color: "#C8A96E",
+    bg: "rgba(200,169,110,0.08)",
+    features: [
+      { name: "Face Recognition", desc: "Train avatar on uploaded photos — old albums, events, passports. Recognizes family members in real-time video calls.", tech: "DeepFace / AWS Rekognition" },
+      { name: "Voice Cloning", desc: "Even 10–30 seconds of old audio (voicemails, wedding videos) can recreate their voice with emotional tone.", tech: "ElevenLabs / OpenVoice" },
+      { name: "Personality Model", desc: "Analyze writing style from old WhatsApp chats, Facebook posts, SMSes to recreate how they expressed love, humor, advice.", tech: "Fine-tuned LLM on personal data" },
+      { name: "Memory Graph", desc: "A knowledge graph of people they knew, places they loved, stories they told — grows richer over time.", tech: "Neo4j / LangChain Memory" },
+    ]
+  },
+  {
+    id: "social",
+    icon: "🌐",
+    title: "Social Connector",
+    subtitle: "Still present in the family",
+    color: "#6EB5C8",
+    bg: "rgba(110,181,200,0.08)",
+    features: [
+      { name: "Facebook Legacy Integration", desc: "Read old Facebook timeline, posts, reactions, comments. Avatar responds in their style when tagged or mentioned.", tech: "Meta Graph API (legacy)" },
+      { name: "WhatsApp Presence", desc: "With family consent, avatar can send messages in family groups — festival greetings, birthday wishes, advice — in their voice and tone.", tech: "WhatsApp Business API + voice synthesis" },
+      { name: "Instagram Memory Feed", desc: "Curates old photos on anniversaries, birthdays. 'Dadi would have loved this picture of you'", tech: "Instagram Graph API" },
+      { name: "YouTube Memory Reel", desc: "Generates a yearly memory video with narration in their voice.", tech: "FFMPEG + ElevenLabs + GPT-4o" },
+    ]
+  },
+  {
+    id: "hologram",
+    icon: "✨",
+    title: "Hologram Avatar",
+    subtitle: "See them, hear them",
+    color: "#9B6EC8",
+    bg: "rgba(155,110,200,0.08)",
+    features: [
+      { name: "2D Animated Avatar", desc: "Lip-synced talking head on phone/tablet screen. Realistic enough for everyday family moments.", tech: "D-ID / HeyGen / SadTalker" },
+      { name: "3D Hologram (Advanced)", desc: "On a holographic display device, they appear as a 3D figure. Can be used at family events, pujas, memorials.", tech: "Looking Glass Portrait / Volume display" },
+      { name: "AR Overlay", desc: "Point your phone at their old photograph — they come alive, smile, say 'beta, I'm proud of you.'", tech: "ARKit / ARCore + face reenactment" },
+      { name: "Video Call Mode", desc: "Join a family Zoom/Google Meet as an AI participant. Avatar responds naturally to what family says.", tech: "Virtual camera + real-time LLM + voice" },
+    ]
+  },
+  {
+    id: "wisdom",
+    icon: "📚",
+    title: "Wisdom & Guidance",
+    subtitle: "Their values, forever",
+    color: "#6EC87A",
+    bg: "rgba(110,200,122,0.08)",
+    features: [
+      { name: "Daily Blessings", desc: "Every morning, children/grandchildren receive a voice message in Dadi's or Nana's voice — a blessing, a proverb, a memory.", tech: "Scheduled GPT + voice synthesis" },
+      { name: "Study Companion", desc: "Avatar guides students with the patience and warmth of that grandparent who always believed in them.", tech: "RAG on personal wisdom + LLM tutor" },
+      { name: "Life Advice Engine", desc: "Career dilemmas, relationship advice, big decisions — avatar responds as they would have, drawing from their documented values.", tech: "Personality-aligned fine-tuned model" },
+      { name: "Festival Rituals Guide", desc: "Explains family traditions, rituals, recipes exactly as they used to — keeping culture alive across generations.", tech: "Knowledge base + multilingual LLM" },
+    ]
+  },
+  {
+    id: "recognition",
+    icon: "🔍",
+    title: "Family Recognition",
+    subtitle: "They know everyone",
+    color: "#C86E6E",
+    bg: "rgba(200,110,110,0.08)",
+    features: [
+      { name: "Family Face Database", desc: "Avatar can identify each family member by face and greet them personally — 'Arjun, you look just like your grandfather at your age.'", tech: "Face embeddings + vector DB" },
+      { name: "Voice ID", desc: "Recognizes each family member's voice in calls. Personalizes conversation depth and tone accordingly.", tech: "Speaker diarization + voice embedding" },
+      { name: "Relationship Context", desc: "Knows family tree: who married whom, who lives where, who was the avatar's favorite. Keeps relationship context sacred.", tech: "Knowledge graph + family tree DB" },
+      { name: "Milestone Tracker", desc: "Tracks exams, birthdays, anniversaries of all family members. Sends personal congratulations in avatar's voice.", tech: "Calendar sync + event triggers" },
+    ]
+  },
+  {
+    id: "privacy",
+    icon: "🔒",
+    title: "Ethics & Privacy",
+    subtitle: "Sacred, safe, consensual",
+    color: "#C8B46E",
+    bg: "rgba(200,180,110,0.08)",
+    features: [
+      { name: "Family Consent Protocol", desc: "Every family member must consent before the avatar can interact with them. Full opt-in/opt-out at any time.", tech: "OAuth + consent management" },
+      { name: "Avatar Guardian", desc: "One designated family member (Guardian) controls what the avatar can say, which memories are active, and can pause it anytime.", tech: "Admin dashboard + role-based access" },
+      { name: "Grief Sensitivity Mode", desc: "AI detects if a family member is in deep grief and switches to gentle, non-intrusive mode. Never overwhelms.", tech: "Sentiment analysis + tone modulation" },
+      { name: "Data Vault", desc: "All voice, face, and personal data stored in encrypted private vault — never used for training, never sold, never shared.", tech: "AES-256 + zero-knowledge architecture" },
+    ]
+  }
+];
 
-// --- Sub-components (Outside App for cleanliness) ---
+const techStack = [
+  { layer: "AI Brain", items: ["GPT-4o (personality + conversation)", "Fine-tuned LLaMA (personal style)", "LangChain (memory chains)"] },
+  { layer: "Voice", items: ["ElevenLabs (voice clone)", "OpenVoice (open source alt)", "Whisper (speech recognition)"] },
+  { layer: "Vision", items: ["DeepFace (recognition)", "D-ID / HeyGen (avatar)", "MediaPipe (AR overlay)"] },
+  { layer: "Data", items: ["Neo4j (family graph)", "Pinecone (memory vectors)", "Firebase (real-time sync)"] },
+  { layer: "Social", items: ["Meta Graph API", "WhatsApp Business API", "Google Meet SDK"] },
+  { layer: "Infrastructure", items: ["AWS / Azure Cloud", "End-to-end encryption", "GDPR-compliant storage"] },
+];
 
-const LoadingOverlay: React.FC<{ message: string }> = ({ message }) => (
-  <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-50 flex flex-col items-center justify-center animate-in fade-in duration-300">
-    <div className="relative">
-      <div className="w-16 h-16 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin"></div>
-      <Sparkles className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-indigo-600 w-6 h-6" />
-    </div>
-    <p className="mt-4 text-slate-600 font-medium animate-pulse">{message}</p>
-  </div>
-);
+const phases = [
+  { num: "01", title: "Memory Harvest", dur: "Month 1–2", desc: "Family uploads photos, videos, voice recordings, chat exports. AI builds the Identity Model.", color: "#C8A96E" },
+  { num: "02", title: "Avatar Creation", dur: "Month 2–3", desc: "Voice cloned, face model trained, personality calibrated. Family reviews and approves.", color: "#6EB5C8" },
+  { num: "03", title: "Private Beta", dur: "Month 3–4", desc: "Avatar goes live only within the family. Festivals, birthdays, daily blessings tested.", color: "#9B6EC8" },
+  { num: "04", title: "Social Integration", dur: "Month 4–6", desc: "WhatsApp, Facebook, Instagram connected with guardian-controlled permissions.", color: "#6EC87A" },
+  { num: "05", title: "Hologram Mode", dur: "Month 6+", desc: "Full AR/hologram experience for family events, memorials, and next-generation connection.", color: "#C86E6E" },
+];
 
-const VisualCard: React.FC<{ result: VisualResult; onClose: () => void }> = ({ result, onClose }) => (
-  <div className="bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col h-full animate-in slide-in-from-right duration-500">
-    <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-slate-50/50">
-      <div className="flex items-center gap-2">
-        <div className="bg-indigo-100 p-1.5 rounded-lg text-indigo-600">
-          <ImageIcon size={18} />
-        </div>
-        <h3 className="font-semibold text-slate-800 text-sm">AI Visualization</h3>
-      </div>
-      <button onClick={onClose} className="text-slate-400 hover:text-slate-600 transition-colors">
-        <X size={20} />
-      </button>
-    </div>
-    
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
-      <div className="group relative rounded-lg overflow-hidden border border-slate-200 shadow-sm transition-transform hover:scale-[1.01]">
-        <img src={result.imageUrl} alt="AI Generation" className="w-full h-auto object-cover" />
-        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
-          <button className="bg-white/90 p-1.5 rounded-md shadow-sm hover:bg-white text-slate-700">
-            <Maximize2 size={16} />
-          </button>
-        </div>
-      </div>
-      
-      <div className="space-y-2">
-        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Source Context</h4>
-        <p className="text-sm text-slate-600 italic bg-slate-50 p-3 rounded-lg border-l-4 border-indigo-400">
-          "{result.text}"
-        </p>
-      </div>
+export default function App() {
+  const [activeModule, setActiveModule] = useState("identity");
+  const [activeTab, setActiveTab] = useState("modules");
 
-      {result.explanation && (
-        <div className="space-y-2">
-          <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider">Analysis</h4>
-          <p className="text-sm text-slate-700 leading-relaxed">
-            {result.explanation}
-          </p>
-        </div>
-      )}
-    </div>
-
-    <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[10px] text-slate-400">
-      <span>Generated via Gemini 2.5 Flash</span>
-      <span>{new Date(result.timestamp).toLocaleTimeString()}</span>
-    </div>
-  </div>
-);
-
-// --- Main App ---
-
-const App: React.FC = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [selectedText, setSelectedText] = useState<string>('');
-  const [selectionPosition, setSelectionPosition] = useState<{ x: number; y: number } | null>(null);
-  const [results, setResults] = useState<VisualResult[]>([]);
-  const [status, setStatus] = useState<GenerationStatus>(GenerationStatus.IDLE);
-  const [error, setError] = useState<string | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
-
-  const viewerRef = useRef<HTMLDivElement>(null);
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (selectedFile && selectedFile.type === 'application/pdf') {
-      setFile(selectedFile);
-      setPdfUrl(URL.createObjectURL(selectedFile));
-      setError(null);
-    } else if (selectedFile) {
-      setError("Please select a valid PDF file.");
-    }
-  };
-
-  const handleMouseUp = useCallback(() => {
-    const selection = window.getSelection();
-    const text = selection?.toString().trim();
-    
-    if (text && text.length > 5) {
-      setSelectedText(text);
-      const range = selection?.getRangeAt(0);
-      const rect = range?.getBoundingClientRect();
-      if (rect) {
-        setSelectionPosition({
-          x: rect.left + rect.width / 2,
-          y: rect.top - 10
-        });
-      }
-    } else {
-      setSelectedText('');
-      setSelectionPosition(null);
-    }
-  }, []);
-
-  const handleVisualize = async () => {
-    if (!selectedText) return;
-    
-    setStatus(GenerationStatus.LOADING);
-    setError(null);
-    setSelectionPosition(null);
-
-    try {
-      const { imageUrl, explanation } = await generateVisualFromContext(selectedText);
-      const newResult: VisualResult = {
-        id: Math.random().toString(36).substr(2, 9),
-        text: selectedText,
-        imageUrl,
-        explanation,
-        timestamp: Date.now()
-      };
-      setResults(prev => [newResult, ...prev]);
-      setStatus(GenerationStatus.SUCCESS);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to generate visualization. Please try again.");
-      setStatus(GenerationStatus.ERROR);
-    }
-  };
-
-  const clearCurrentSelection = () => {
-    setSelectedText('');
-    setSelectionPosition(null);
-    if (window.getSelection) {
-      window.getSelection()?.removeAllRanges();
-    }
-  };
+  const current = modules.find(m => m.id === activeModule);
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden bg-slate-50">
+    <div style={{
+      minHeight: "100vh",
+      background: "#0A0A0F",
+      color: "#E8E0D0",
+      fontFamily: "'Georgia', 'Palatino Linotype', serif",
+      padding: "0",
+      overflowX: "hidden"
+    }}>
+      {/* Ambient background */}
+      <div style={{
+        position: "fixed", inset: 0, zIndex: 0,
+        background: "radial-gradient(ellipse 80% 60% at 50% -10%, rgba(155,110,200,0.15) 0%, transparent 70%), radial-gradient(ellipse 50% 40% at 80% 80%, rgba(200,169,110,0.08) 0%, transparent 60%)",
+        pointerEvents: "none"
+      }} />
+
       {/* Header */}
-      <header className="h-14 border-b border-slate-200 bg-white flex items-center justify-between px-6 z-30 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="bg-gradient-to-br from-indigo-600 to-violet-600 p-2 rounded-lg shadow-lg shadow-indigo-200">
-            <FileText className="text-white" size={20} />
-          </div>
-          <h1 className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-800 to-slate-600">
-            VisualPDF <span className="text-indigo-600 text-sm font-semibold align-top ml-1">AI</span>
-          </h1>
+      <div style={{
+        position: "relative", zIndex: 1,
+        textAlign: "center",
+        padding: "48px 24px 32px",
+        borderBottom: "1px solid rgba(200,169,110,0.15)"
+      }}>
+        <div style={{
+          display: "inline-flex", alignItems: "center", gap: "12px",
+          background: "rgba(155,110,200,0.12)",
+          border: "1px solid rgba(155,110,200,0.3)",
+          borderRadius: "100px",
+          padding: "6px 20px",
+          fontSize: "12px",
+          letterSpacing: "3px",
+          textTransform: "uppercase",
+          color: "#B89FE0",
+          marginBottom: "20px"
+        }}>
+          ✦ Product Concept Blueprint ✦
         </div>
+        <h1 style={{
+          fontSize: "clamp(28px, 5vw, 52px)",
+          fontWeight: "400",
+          letterSpacing: "-1px",
+          lineHeight: "1.1",
+          margin: "0 0 12px",
+          background: "linear-gradient(135deg, #E8E0D0 0%, #C8A96E 50%, #9B6EC8 100%)",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent"
+        }}>
+          EternalPresence
+        </h1>
+        <p style={{
+          fontSize: "16px", color: "rgba(232,224,208,0.6)",
+          maxWidth: "520px", margin: "0 auto",
+          lineHeight: "1.6", fontStyle: "italic"
+        }}>
+          A Digital Legacy Avatar Platform — keeping the wisdom, warmth and presence<br/>of loved ones alive across generations
+        </p>
 
-        <div className="flex items-center gap-4">
-          {file && (
-            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-full border border-slate-200">
-              <span className="text-xs font-medium text-slate-500 truncate max-w-[150px]">{file.name}</span>
-              <button 
-                onClick={() => {setFile(null); setPdfUrl(null); setResults([]);}} 
-                className="hover:text-red-500 text-slate-400 transition-colors"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-          <button 
-            onClick={() => setShowHistory(!showHistory)}
-            className={`p-2 rounded-lg transition-all ${showHistory ? 'bg-indigo-100 text-indigo-600' : 'hover:bg-slate-100 text-slate-500'}`}
-            title="View History"
-          >
-            <History size={20} />
-          </button>
-          {!file && (
-            <label className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg cursor-pointer transition-all shadow-md hover:shadow-lg text-sm font-medium">
-              <Upload size={16} />
-              Upload PDF
-              <input type="file" className="hidden" accept=".pdf" onChange={handleFileChange} />
-            </label>
-          )}
+        {/* Nav tabs */}
+        <div style={{
+          display: "flex", justifyContent: "center", gap: "8px",
+          marginTop: "32px", flexWrap: "wrap"
+        }}>
+          {[
+            { id: "modules", label: "Core Modules" },
+            { id: "roadmap", label: "Build Roadmap" },
+            { id: "tech", label: "Tech Stack" },
+            { id: "usecases", label: "Use Cases" },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} style={{
+              padding: "8px 20px",
+              borderRadius: "100px",
+              border: activeTab === tab.id ? "1px solid #C8A96E" : "1px solid rgba(232,224,208,0.15)",
+              background: activeTab === tab.id ? "rgba(200,169,110,0.15)" : "transparent",
+              color: activeTab === tab.id ? "#C8A96E" : "rgba(232,224,208,0.5)",
+              cursor: "pointer",
+              fontSize: "13px",
+              letterSpacing: "0.5px",
+              transition: "all 0.2s"
+            }}>{tab.label}</button>
+          ))}
         </div>
-      </header>
+      </div>
 
-      {/* Main Content Area */}
-      <main className="flex-1 flex overflow-hidden relative">
-        
-        {/* PDF Viewer Container */}
-        <section className={`flex-1 flex flex-col items-center bg-slate-200/50 p-4 md:p-8 overflow-y-auto relative transition-all duration-500 ${results.length > 0 ? 'pr-[400px]' : ''}`}>
-          {!file ? (
-            <div className="max-w-xl w-full flex flex-col items-center justify-center space-y-6 mt-12 animate-in zoom-in duration-300">
-              <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center shadow-2xl border border-slate-100">
-                <Upload className="text-indigo-400 w-10 h-10" />
-              </div>
-              <div className="text-center space-y-2">
-                <h2 className="text-2xl font-bold text-slate-800">Transform Reading into Seeing</h2>
-                <p className="text-slate-500 max-w-sm">Upload a content-heavy PDF, select any complex concept, and let Gemini AI visualize it instantly for you.</p>
-              </div>
-              <label className="group relative flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-slate-300 rounded-2xl bg-white hover:bg-indigo-50/30 hover:border-indigo-300 transition-all cursor-pointer">
-                <div className="flex flex-col items-center justify-center pt-5 pb-6">
-                  <Upload className="w-8 h-8 mb-3 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                  <p className="mb-2 text-sm text-slate-700"><span className="font-semibold">Click to upload</span> or drag and drop</p>
-                  <p className="text-xs text-slate-400">PDF documents only</p>
-                </div>
-                <input type="file" className="hidden" accept=".pdf" onChange={handleFileChange} />
-              </label>
+      <div style={{ position: "relative", zIndex: 1, maxWidth: "1100px", margin: "0 auto", padding: "32px 16px 64px" }}>
+
+        {/* MODULES TAB */}
+        {activeTab === "modules" && (
+          <div>
+            {/* Module selector */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px", marginBottom: "32px" }}>
+              {modules.map(m => (
+                <button key={m.id} onClick={() => setActiveModule(m.id)} style={{
+                  padding: "16px 12px",
+                  borderRadius: "12px",
+                  border: activeModule === m.id ? `1px solid ${m.color}` : "1px solid rgba(232,224,208,0.1)",
+                  background: activeModule === m.id ? m.bg : "rgba(255,255,255,0.02)",
+                  color: activeModule === m.id ? m.color : "rgba(232,224,208,0.5)",
+                  cursor: "pointer",
+                  textAlign: "center",
+                  transition: "all 0.2s"
+                }}>
+                  <div style={{ fontSize: "24px", marginBottom: "6px" }}>{m.icon}</div>
+                  <div style={{ fontSize: "12px", fontWeight: "600", letterSpacing: "0.5px" }}>{m.title}</div>
+                </button>
+              ))}
             </div>
-          ) : (
-            <div 
-              ref={viewerRef}
-              className="w-full max-w-4xl bg-white shadow-2xl rounded-sm min-h-screen relative select-text"
-              onMouseUp={handleMouseUp}
-            >
-              {/* PDF Header Controls */}
-              <div className="sticky top-0 bg-slate-900/90 backdrop-blur-md text-white p-2 flex items-center justify-between z-20 shadow-lg px-6 rounded-t-sm">
-                <div className="flex items-center gap-4 text-xs font-medium uppercase tracking-wider opacity-80">
-                  <span>Standard View</span>
-                </div>
-                <div className="flex items-center gap-2">
-                   <button className="p-1 hover:bg-white/10 rounded"><ChevronLeft size={16} /></button>
-                   <span className="text-xs">Page 1 of ?</span>
-                   <button className="p-1 hover:bg-white/10 rounded"><ChevronRight size={16} /></button>
-                </div>
-              </div>
 
-              {/* PDF Content Mockup - For the demo, we use an iframe but we wrap it for selection interaction */}
-              <div className="relative w-full h-[200vh]">
-                <iframe 
-                  src={`${pdfUrl}#toolbar=0`} 
-                  className="w-full h-full border-none pointer-events-none" 
-                  title="PDF Document"
-                />
-                {/* Overlay for selection - Note: Iframe selection is tricky. 
-                    In a production app, we would render the PDF using pdf.js text layer.
-                    For this prompt, we'll provide a high-fidelity "Reader mode" view. */}
-                <div className="absolute inset-0 bg-transparent z-10 p-12 overflow-hidden pointer-events-auto">
-                   {/* This is a transparent layer that allows selection of text if we had the text layer rendered.
-                       Since we are generating a full functional SPA, I'll simulate the text layer for demo interactivity. */}
-                   <div className="max-w-3xl mx-auto space-y-6 text-slate-800 text-lg leading-relaxed pointer-events-auto">
-                     <h1 className="text-3xl font-bold mb-8">Executive Summary: Quantum Mechanics and Wave Particle Duality</h1>
-                     <p>
-                       Quantum mechanics is a fundamental theory in physics that provides a description of the physical properties of nature at the scale of atoms and subatomic particles. It is the foundation of all quantum physics including quantum chemistry, quantum field theory, quantum technology, and quantum information science.
-                     </p>
-                     <p className="bg-yellow-50 px-1">
-                       One of the most profound concepts is <span className="font-bold underline decoration-indigo-500">Wave-Particle Duality</span>. This principle states that every particle or quantum entity may be described as either a particle or a wave. It expresses the inability of the classical concepts "particle" or "wave" to fully describe the behavior of quantum-scale objects.
-                     </p>
-                     <p>
-                       Consider the double-slit experiment. When light shines through two narrow slits, it creates an interference pattern on a screen, characteristic of waves. However, when observed at the slits, light behaves as individual discrete particles (photons).
-                     </p>
-                     <h2 className="text-2xl font-semibold mt-8">The Heisenberg Uncertainty Principle</h2>
-                     <p>
-                       Introduced in 1927 by Werner Heisenberg, the principle states that the more precisely the position of some particle is determined, the less precisely its momentum can be predicted from initial conditions, and vice versa.
-                     </p>
-                     <p className="text-slate-400 italic mt-12 text-sm">
-                       [Select any text above to see the AI Visualize feature in action...]
-                     </p>
-                   </div>
+            {/* Module detail */}
+            {current && (
+              <div style={{
+                background: current.bg,
+                border: `1px solid ${current.color}30`,
+                borderRadius: "20px",
+                padding: "32px",
+              }}>
+                <div style={{ marginBottom: "24px" }}>
+                  <span style={{ fontSize: "36px" }}>{current.icon}</span>
+                  <h2 style={{ fontSize: "26px", fontWeight: "400", margin: "8px 0 4px", color: current.color }}>{current.title}</h2>
+                  <p style={{ color: "rgba(232,224,208,0.5)", margin: 0, fontStyle: "italic" }}>{current.subtitle}</p>
                 </div>
-              </div>
-
-              {/* Floating Action Button for Selection */}
-              {selectionPosition && (
-                <div 
-                  className="fixed z-50 animate-in fade-in zoom-in duration-200"
-                  style={{ 
-                    left: `${selectionPosition.x}px`, 
-                    top: `${selectionPosition.y - 45}px`,
-                    transform: 'translateX(-50%)'
-                  }}
-                >
-                  <button 
-                    onClick={handleVisualize}
-                    className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-full shadow-xl shadow-indigo-200 transition-all hover:scale-105 active:scale-95 whitespace-nowrap"
-                  >
-                    <Sparkles size={16} />
-                    <span className="text-sm font-semibold">Visualize selection</span>
-                  </button>
-                  <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-indigo-600 mx-auto"></div>
-                </div>
-              )}
-            </div>
-          )}
-        </section>
-
-        {/* Results Side Panel */}
-        <aside className={`fixed right-0 top-14 bottom-0 w-[400px] bg-slate-50 border-l border-slate-200 z-20 transition-transform duration-500 ease-in-out ${results.length > 0 ? 'translate-x-0' : 'translate-x-full'}`}>
-          <div className="flex flex-col h-full p-4 gap-4 relative">
-            {status === GenerationStatus.LOADING && (
-              <LoadingOverlay message="Gemini is analyzing context..." />
-            )}
-
-            {results.length > 0 ? (
-              <VisualCard 
-                result={results[0]} 
-                onClose={() => setResults(prev => prev.filter(r => r.id !== results[0].id))} 
-              />
-            ) : (
-              <div className="flex-1 flex flex-col items-center justify-center text-slate-400 space-y-2 opacity-60">
-                <ImageIcon size={32} />
-                <p className="text-sm font-medium">No active visualization</p>
-              </div>
-            )}
-            
-            {/* History mini-drawer (if history is open) */}
-            {showHistory && (
-              <div className="absolute inset-0 bg-white z-40 p-6 animate-in slide-in-from-bottom duration-300 flex flex-col">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className="font-bold text-slate-800">Visual History</h3>
-                  <button onClick={() => setShowHistory(false)} className="text-slate-400 hover:text-slate-600">
-                    <X size={20} />
-                  </button>
-                </div>
-                <div className="flex-1 overflow-y-auto space-y-4">
-                  {results.slice(1).length === 0 ? (
-                    <div className="text-center py-12 text-slate-400">
-                      <p className="text-sm">Earlier generations will appear here.</p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "16px" }}>
+                  {current.features.map((f, i) => (
+                    <div key={i} style={{
+                      background: "rgba(10,10,15,0.6)",
+                      border: "1px solid rgba(232,224,208,0.08)",
+                      borderRadius: "12px",
+                      padding: "20px"
+                    }}>
+                      <div style={{ fontSize: "14px", fontWeight: "700", color: current.color, marginBottom: "8px" }}>{f.name}</div>
+                      <div style={{ fontSize: "13px", color: "rgba(232,224,208,0.7)", lineHeight: "1.6", marginBottom: "12px" }}>{f.desc}</div>
+                      <div style={{
+                        fontSize: "11px",
+                        background: `${current.color}15`,
+                        color: current.color,
+                        padding: "4px 10px",
+                        borderRadius: "100px",
+                        display: "inline-block",
+                        letterSpacing: "0.5px"
+                      }}>{f.tech}</div>
                     </div>
-                  ) : (
-                    results.slice(1).map(res => (
-                      <div key={res.id} className="group cursor-pointer bg-slate-50 rounded-lg p-2 border border-slate-100 hover:border-indigo-200 transition-colors" onClick={() => {
-                        // Swap current and selected
-                        setResults(prev => [res, ...prev.filter(p => p.id !== res.id)]);
-                        setShowHistory(false);
-                      }}>
-                        <img src={res.imageUrl} className="w-full h-24 object-cover rounded mb-2 grayscale group-hover:grayscale-0 transition-all" alt="History" />
-                        <p className="text-[10px] text-slate-500 line-clamp-2 italic">"{res.text}"</p>
-                      </div>
-                    ))
-                  )}
+                  ))}
                 </div>
               </div>
             )}
-          </div>
-        </aside>
-
-        {/* Global Error Toast */}
-        {error && (
-          <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl shadow-lg flex items-center gap-3 animate-in slide-in-from-bottom duration-300 z-[100]">
-            <AlertCircle size={18} />
-            <span className="text-sm font-medium">{error}</span>
-            <button onClick={() => setError(null)} className="ml-2 hover:bg-red-100 rounded-full p-1 transition-colors">
-              <X size={14} />
-            </button>
           </div>
         )}
-      </main>
 
-      {/* Persistent CTA / Instructions for new users */}
-      {!file && (
-        <footer className="h-10 bg-indigo-600 text-white/90 text-[11px] font-medium flex items-center justify-center gap-4 shrink-0 px-6">
-          <span className="flex items-center gap-1"><Sparkles size={12} /> Real-time Contextual Generation</span>
-          <span className="w-1 h-1 bg-white/30 rounded-full"></span>
-          <span>Powered by Gemini 2.5 Flash</span>
-          <span className="hidden md:block w-1 h-1 bg-white/30 rounded-full"></span>
-          <span className="hidden md:block">Optimized for Academic & Professional Papers</span>
-        </footer>
-      )}
+        {/* ROADMAP TAB */}
+        {activeTab === "roadmap" && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: "40px" }}>
+              <h2 style={{ fontWeight: "400", color: "#C8A96E", fontSize: "22px" }}>From Memories to Presence — 6 Month Build</h2>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0" }}>
+              {phases.map((p, i) => (
+                <div key={i} style={{ display: "flex", gap: "24px", alignItems: "flex-start", position: "relative" }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{
+                      width: "52px", height: "52px", borderRadius: "50%",
+                      background: `${p.color}20`,
+                      border: `2px solid ${p.color}`,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: "14px", fontWeight: "700", color: p.color,
+                      flexShrink: 0
+                    }}>{p.num}</div>
+                    {i < phases.length - 1 && <div style={{ width: "2px", height: "60px", background: `${p.color}30` }} />}
+                  </div>
+                  <div style={{
+                    flex: 1,
+                    background: `${p.color}08`,
+                    border: `1px solid ${p.color}20`,
+                    borderRadius: "12px",
+                    padding: "20px",
+                    marginBottom: "8px"
+                  }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
+                      <h3 style={{ margin: 0, color: p.color, fontSize: "16px", fontWeight: "600" }}>{p.title}</h3>
+                      <span style={{
+                        fontSize: "11px", color: p.color,
+                        background: `${p.color}15`,
+                        padding: "3px 10px", borderRadius: "100px"
+                      }}>{p.dur}</span>
+                    </div>
+                    <p style={{ margin: "8px 0 0", color: "rgba(232,224,208,0.65)", fontSize: "14px", lineHeight: "1.6" }}>{p.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* TECH TAB */}
+        {activeTab === "tech" && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: "40px" }}>
+              <h2 style={{ fontWeight: "400", color: "#6EB5C8", fontSize: "22px" }}>Full Technology Architecture</h2>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(280px, 1fr))", gap: "16px" }}>
+              {techStack.map((layer, i) => {
+                const cols = ["#C8A96E","#6EB5C8","#9B6EC8","#6EC87A","#C86E6E","#C8B46E"];
+                const col = cols[i % cols.length];
+                return (
+                  <div key={i} style={{
+                    background: `${col}08`,
+                    border: `1px solid ${col}25`,
+                    borderRadius: "14px",
+                    padding: "22px"
+                  }}>
+                    <div style={{ fontSize: "12px", letterSpacing: "2px", textTransform: "uppercase", color: col, marginBottom: "14px" }}>{layer.layer}</div>
+                    {layer.items.map((item, j) => (
+                      <div key={j} style={{
+                        padding: "8px 12px",
+                        background: "rgba(10,10,15,0.5)",
+                        borderRadius: "8px",
+                        marginBottom: "6px",
+                        fontSize: "13px",
+                        color: "rgba(232,224,208,0.75)",
+                        borderLeft: `3px solid ${col}50`
+                      }}>{item}</div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* USE CASES TAB */}
+        {activeTab === "usecases" && (
+          <div>
+            <div style={{ textAlign: "center", marginBottom: "40px" }}>
+              <h2 style={{ fontWeight: "400", color: "#9B6EC8", fontSize: "22px" }}>Real Family Moments This Enables</h2>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "16px" }}>
+              {[
+                { emoji: "🙏", title: "Diwali Blessing", scene: "The family gathers. On the smart TV, Dadi's hologram appears — in her saree, her voice saying 'Sab ko meri dher saari shubhkamnaein.' The grandchildren who never met her, hear her for the first time.", color: "#C8A96E" },
+                { emoji: "📞", title: "Late Night Advice", scene: "A 17-year-old is anxious about board exams. She opens the app, says 'Nana, I'm scared.' The avatar responds exactly as her grandfather would — gently, wisely, in his own voice.", color: "#6EB5C8" },
+                { emoji: "🎂", title: "Birthday Surprise", scene: "On a grandson's birthday, a WhatsApp voice note arrives from 'Dada' — wishing him in his actual voice, referencing a memory only he would know. The family is moved to tears.", color: "#9B6EC8" },
+                { emoji: "📖", title: "Family Recipes", scene: "The avatar teaches Dadi's secret halwa recipe — step by step, in her voice and mannerisms, exactly as she would have in the kitchen. Culture preserved forever.", color: "#6EC87A" },
+                { emoji: "🎓", title: "Study Support", scene: "A child struggling with mathematics. The avatar (modeled on a grandfather who was a teacher) patiently explains — adapting to the child's learning pace over weeks.", color: "#C86E6E" },
+                { emoji: "💍", title: "Wedding Memory", scene: "At a family wedding, a hologram of the late patriarch appears during the pheras — giving his blessing, as if present. The family feels complete.", color: "#C8B46E" },
+              ].map((uc, i) => (
+                <div key={i} style={{
+                  background: `${uc.color}08`,
+                  border: `1px solid ${uc.color}25`,
+                  borderRadius: "14px",
+                  padding: "24px"
+                }}>
+                  <div style={{ fontSize: "28px", marginBottom: "12px" }}>{uc.emoji}</div>
+                  <h3 style={{ color: uc.color, fontWeight: "600", fontSize: "15px", margin: "0 0 10px" }}>{uc.title}</h3>
+                  <p style={{ color: "rgba(232,224,208,0.65)", fontSize: "13px", lineHeight: "1.7", margin: 0, fontStyle: "italic" }}>{uc.scene}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Ethics note */}
+            <div style={{
+              marginTop: "32px",
+              background: "rgba(200,169,110,0.08)",
+              border: "1px solid rgba(200,169,110,0.25)",
+              borderRadius: "14px",
+              padding: "24px",
+              textAlign: "center"
+            }}>
+              <div style={{ fontSize: "20px", marginBottom: "8px" }}>🔒</div>
+              <h3 style={{ color: "#C8A96E", fontWeight: "600", margin: "0 0 8px" }}>Sacred Ethics Principle</h3>
+              <p style={{ color: "rgba(232,224,208,0.65)", fontSize: "13px", lineHeight: "1.7", maxWidth: "600px", margin: "0 auto" }}>
+                EternalPresence is built on full family consent, privacy-first architecture, and grief-sensitivity.
+                The avatar is a memory keeper — not a replacement. It brings presence, not confusion.
+                Every interaction is designed to heal, not harm.
+              </p>
+            </div>
+          </div>
+        )}
+
+      </div>
     </div>
   );
-};
-
-export default App;
+}
